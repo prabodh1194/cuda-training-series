@@ -30,8 +30,9 @@ __global__ void mmul(const float *A, const float *B, float *C, int ds) {
 
   if ((idx < ds) && (idy < ds)){
     float temp = 0;
+    int r = idy * ds;
     for (int i = 0; i < ds; i++)
-      temp += A[FIXME*ds+i] * B[i*ds+FIXME];   // dot product of row and column
+      temp += A[r + i] * B[i * ds + idx];   // dot product of row and column
     C[idy*ds+idx] = temp;
   }
 }
@@ -51,10 +52,12 @@ int main(){
   h_A = new float[DSIZE*DSIZE];
   h_B = new float[DSIZE*DSIZE];
   h_C = new float[DSIZE*DSIZE];
+
   for (int i = 0; i < DSIZE*DSIZE; i++){
     h_A[i] = A_val;
     h_B[i] = B_val;
-    h_C[i] = 0;}
+    h_C[i] = 0;
+}
 
   // Initialization timing
   t1 = clock();
@@ -71,6 +74,10 @@ int main(){
   cudaCheckErrors("cudaMemcpy H2D failure");
 
   // Cuda processing sequence step 1 is complete
+
+// there is a 2d matrix represented in single dim.
+// the matrix of 8192 * 8192 size is split into 256 blocks, where each block is 32 * 32.
+// this way, every thread maps to one element in the matrix.
 
   // Launch kernel
   dim3 block(block_size, block_size);  // dim3 variable holds 3 dimensions
