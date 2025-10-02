@@ -34,18 +34,18 @@ __global__ void mmul(const float *A, const float *B, float *C, int ds) {
 
   if ((idx < ds) && (idy < ds)){
     float temp = 0;
-    for (int i = 0; i < ds/block_size; i++) {
+    for (int i = 0; i < ds/block_size; i++) { // multiplication happens in multiple phases.
 
       // Load data into shared memory
-      As[threadIdx.y][threadIdx.x] = A[FIXME];
-      Bs[threadIdx.y][threadIdx.x] = B[FIXME];
+      As[threadIdx.y][threadIdx.x] = A[idy * ds + (i * block_size + threadIdx.x)]; // A[idy][]
+      Bs[threadIdx.y][threadIdx.x] = B[(i * block_size + threadIdx.y) * ds + idx];  // B[][idx]
 
       // Synchronize
       __syncthreads();
 
       // Keep track of the running sum
       for (int k = 0; k < block_size; k++)
-      	temp += As[FIXME][FIXME] * Bs[FIXME][FIXME]; // dot product of row and column
+      	temp += As[threadIdx.y][k] * Bs[k][threadIdx.x]; // dot product of row and column
       __syncthreads();
 
     }
