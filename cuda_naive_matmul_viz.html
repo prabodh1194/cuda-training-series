@@ -1,0 +1,696 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CUDA Naive MatMul - Index Visualizer</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+        }
+        h1 {
+            text-align: center;
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 30px;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 25px;
+            flex-wrap: wrap;
+            justify-content: center;
+            align-items: center;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            background: #667eea;
+            color: white;
+            transition: all 0.3s;
+            font-weight: 600;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .speed-control {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        input[type="range"] {
+            width: 150px;
+        }
+        .main-viz {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        .viz-section {
+            background: #f9f9f9;
+            padding: 20px;
+            border-radius: 10px;
+            border: 2px solid #ddd;
+        }
+        .section-title {
+            font-weight: bold;
+            font-size: 18px;
+            color: #667eea;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .grid-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        svg {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: white;
+        }
+        .index-calc {
+            background: #e8f4f8;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border-left: 4px solid #667eea;
+            font-family: 'Courier New', monospace;
+            font-size: 14px;
+            line-height: 1.8;
+        }
+        .calc-step {
+            margin: 10px 0;
+            padding: 8px;
+            background: white;
+            border-radius: 5px;
+        }
+        .highlight {
+            background: #fff3cd;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            color: #856404;
+        }
+        .result {
+            background: #d4edda;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: bold;
+            color: #155724;
+        }
+        .matrix-vis {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 20px;
+        }
+        .matrix-container {
+            text-align: center;
+        }
+        .matrix-label {
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #667eea;
+        }
+        .info-panel {
+            background: #f0f4ff;
+            padding: 20px;
+            border-radius: 10px;
+            margin-top: 20px;
+            border-left: 4px solid #667eea;
+        }
+        .info-panel h3 {
+            margin-top: 0;
+            color: #667eea;
+        }
+        .step-info {
+            font-size: 15px;
+            line-height: 1.6;
+        }
+        .legend {
+            display: flex;
+            gap: 20px;
+            justify-content: center;
+            margin-top: 20px;
+            flex-wrap: wrap;
+        }
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .legend-box {
+            width: 30px;
+            height: 30px;
+            border: 2px solid #333;
+            border-radius: 4px;
+        }
+        .memory-layout {
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+            border: 1px solid #ddd;
+        }
+        .memory-row {
+            display: flex;
+            gap: 3px;
+            margin: 5px 0;
+        }
+        .memory-cell {
+            width: 40px;
+            height: 40px;
+            border: 1px solid #999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            border-radius: 3px;
+            background: white;
+        }
+        .thread-info {
+            background: #fff3cd;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border: 2px solid #ffc107;
+        }
+        .thread-coords {
+            font-size: 18px;
+            font-weight: bold;
+            color: #856404;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 CUDA Naive Matrix Multiplication</h1>
+        <p class="subtitle">Understanding Thread Indexing and Memory Access Patterns</p>
+        
+        <div class="controls">
+            <button id="startBtn">Start Animation</button>
+            <button id="pauseBtn" disabled>Pause</button>
+            <button id="resetBtn">Reset</button>
+            <button id="stepBtn">Step Forward</button>
+            <div class="speed-control">
+                <label>Speed:</label>
+                <input type="range" id="speedSlider" min="0.5" max="3" step="0.5" value="1">
+                <span id="speedLabel">1x</span>
+            </div>
+        </div>
+
+        <div class="main-viz">
+            <div class="viz-section">
+                <div class="section-title">🎯 Thread Grid Layout</div>
+                <div class="grid-container">
+                    <svg id="gridSvg" width="400" height="400"></svg>
+                </div>
+                <div class="thread-info" id="threadInfo">
+                    <div class="thread-coords">Select a thread to begin</div>
+                    <div id="threadDetails"></div>
+                </div>
+            </div>
+
+            <div class="viz-section">
+                <div class="section-title">📐 Index Calculations</div>
+                <div class="index-calc" id="indexCalc">
+                    Click "Start Animation" to see index calculations step by step.
+                </div>
+            </div>
+        </div>
+
+        <div class="matrix-vis">
+            <div class="matrix-container">
+                <div class="matrix-label">Matrix A (8×8)</div>
+                <svg id="matrixA" width="280" height="280"></svg>
+                <div style="margin-top: 10px; font-size: 12px; color: #666;">Row-major: A[row][col]</div>
+            </div>
+            <div class="matrix-container">
+                <div class="matrix-label">Matrix B (8×8)</div>
+                <svg id="matrixB" width="280" height="280"></svg>
+                <div style="margin-top: 10px; font-size: 12px; color: #666;">Row-major: B[row][col]</div>
+            </div>
+            <div class="matrix-container">
+                <div class="matrix-label">Matrix C (8×8)</div>
+                <svg id="matrixC" width="280" height="280"></svg>
+                <div style="margin-top: 10px; font-size: 12px; color: #666;">Output: C[row][col]</div>
+            </div>
+        </div>
+
+        <div class="legend">
+            <div class="legend-item">
+                <div class="legend-box" style="background: #ffd700;"></div>
+                <span>Current Thread</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #ff6b6b;"></div>
+                <span>Reading from A (row)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #4ecdc4;"></div>
+                <span>Reading from B (column)</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #95e1d3;"></div>
+                <span>Computing</span>
+            </div>
+            <div class="legend-item">
+                <div class="legend-box" style="background: #90EE90;"></div>
+                <span>Result Written</span>
+            </div>
+        </div>
+
+        <div class="info-panel">
+            <h3>🧮 How Index Calculation Works:</h3>
+            <div class="step-info">
+                <p><strong>1. Global Thread Indices:</strong></p>
+                <code style="background: #e8f4f8; padding: 5px 10px; border-radius: 5px; display: block; margin: 10px 0;">
+                    idx = threadIdx.x + blockDim.x * blockIdx.x  // column<br>
+                    idy = threadIdx.y + blockDim.y * blockIdx.y  // row
+                </code>
+                
+                <p><strong>2. Memory Access (Row-Major):</strong></p>
+                <ul>
+                    <li><code>A[idy*ds+i]</code> - Reads entire row <strong>idy</strong> of matrix A</li>
+                    <li><code>B[i*ds+idx]</code> - Reads entire column <strong>idx</strong> of matrix B</li>
+                    <li><code>C[idy*ds+idx]</code> - Writes to position (idy, idx)</li>
+                </ul>
+
+                <p><strong>3. Dot Product:</strong> Each thread computes one element of C by taking the dot product of one row from A and one column from B.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const MATRIX_SIZE = 8;
+        const BLOCK_SIZE = 4; // Simplified from 32
+        const CELL_SIZE = 30;
+        const CELL_MARGIN = 5;
+        const GRID_CELL_SIZE = 45;
+
+        let animationState = {
+            running: false,
+            threadX: 0,
+            threadY: 0,
+            blockX: 0,
+            blockY: 0,
+            computeStep: 0,
+            phase: 'select', // 'select', 'compute', 'done'
+            speed: 1
+        };
+
+        let animationInterval = null;
+        const NUM_BLOCKS = MATRIX_SIZE / BLOCK_SIZE;
+
+        // Initialize thread grid
+        function initThreadGrid() {
+            const svg = document.getElementById('gridSvg');
+            svg.innerHTML = '';
+
+            // Draw blocks
+            for (let by = 0; by < NUM_BLOCKS; by++) {
+                for (let bx = 0; bx < NUM_BLOCKS; bx++) {
+                    const blockG = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+                    
+                    // Block boundary
+                    const blockRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    blockRect.setAttribute('x', bx * BLOCK_SIZE * GRID_CELL_SIZE + 5);
+                    blockRect.setAttribute('y', by * BLOCK_SIZE * GRID_CELL_SIZE + 5);
+                    blockRect.setAttribute('width', BLOCK_SIZE * GRID_CELL_SIZE - 10);
+                    blockRect.setAttribute('height', BLOCK_SIZE * GRID_CELL_SIZE - 10);
+                    blockRect.setAttribute('fill', 'none');
+                    blockRect.setAttribute('stroke', '#667eea');
+                    blockRect.setAttribute('stroke-width', '3');
+                    blockRect.setAttribute('stroke-dasharray', '5,5');
+                    blockG.appendChild(blockRect);
+
+                    // Block label
+                    const blockLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    blockLabel.setAttribute('x', bx * BLOCK_SIZE * GRID_CELL_SIZE + 15);
+                    blockLabel.setAttribute('y', by * BLOCK_SIZE * GRID_CELL_SIZE + 25);
+                    blockLabel.setAttribute('font-size', '12');
+                    blockLabel.setAttribute('font-weight', 'bold');
+                    blockLabel.setAttribute('fill', '#667eea');
+                    blockLabel.textContent = `B(${bx},${by})`;
+                    blockG.appendChild(blockLabel);
+
+                    // Threads within block
+                    for (let ty = 0; ty < BLOCK_SIZE; ty++) {
+                        for (let tx = 0; tx < BLOCK_SIZE; tx++) {
+                            const gx = bx * BLOCK_SIZE + tx;
+                            const gy = by * BLOCK_SIZE + ty;
+                            
+                            const threadRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                            threadRect.setAttribute('x', gx * GRID_CELL_SIZE + 10);
+                            threadRect.setAttribute('y', gy * GRID_CELL_SIZE + 10);
+                            threadRect.setAttribute('width', GRID_CELL_SIZE - 20);
+                            threadRect.setAttribute('height', GRID_CELL_SIZE - 20);
+                            threadRect.setAttribute('fill', '#f0f0f0');
+                            threadRect.setAttribute('stroke', '#333');
+                            threadRect.setAttribute('stroke-width', '1');
+                            threadRect.setAttribute('rx', '3');
+                            threadRect.setAttribute('data-tx', tx);
+                            threadRect.setAttribute('data-ty', ty);
+                            threadRect.setAttribute('data-bx', bx);
+                            threadRect.setAttribute('data-by', by);
+                            threadRect.setAttribute('data-gx', gx);
+                            threadRect.setAttribute('data-gy', gy);
+                            threadRect.style.cursor = 'pointer';
+                            
+                            threadRect.addEventListener('click', function() {
+                                selectThread(tx, ty, bx, by);
+                            });
+
+                            blockG.appendChild(threadRect);
+
+                            // Thread label
+                            const threadText = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                            threadText.setAttribute('x', gx * GRID_CELL_SIZE + GRID_CELL_SIZE / 2);
+                            threadText.setAttribute('y', gy * GRID_CELL_SIZE + GRID_CELL_SIZE / 2 + 5);
+                            threadText.setAttribute('text-anchor', 'middle');
+                            threadText.setAttribute('font-size', '10');
+                            threadText.setAttribute('fill', '#666');
+                            threadText.textContent = `${gx},${gy}`;
+                            threadText.style.pointerEvents = 'none';
+                            blockG.appendChild(threadText);
+                        }
+                    }
+
+                    svg.appendChild(blockG);
+                }
+            }
+        }
+
+        function initMatrix(svg, label) {
+            svg.innerHTML = '';
+            for (let i = 0; i < MATRIX_SIZE; i++) {
+                for (let j = 0; j < MATRIX_SIZE; j++) {
+                    const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                    rect.setAttribute('x', j * CELL_SIZE + CELL_MARGIN);
+                    rect.setAttribute('y', i * CELL_SIZE + CELL_MARGIN);
+                    rect.setAttribute('width', CELL_SIZE - CELL_MARGIN * 2);
+                    rect.setAttribute('height', CELL_SIZE - CELL_MARGIN * 2);
+                    rect.setAttribute('fill', '#fff');
+                    rect.setAttribute('stroke', '#333');
+                    rect.setAttribute('stroke-width', '1');
+                    rect.setAttribute('data-row', i);
+                    rect.setAttribute('data-col', j);
+                    svg.appendChild(rect);
+
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', j * CELL_SIZE + CELL_SIZE / 2);
+                    text.setAttribute('y', i * CELL_SIZE + CELL_SIZE / 2 + 5);
+                    text.setAttribute('text-anchor', 'middle');
+                    text.setAttribute('font-size', '12');
+                    text.setAttribute('fill', '#666');
+                    text.textContent = label === 'C' ? '0' : (label === 'A' ? '3' : '2');
+                    svg.appendChild(text);
+                }
+            }
+        }
+
+        function highlightCell(svg, row, col, color) {
+            const cells = svg.querySelectorAll('rect');
+            cells.forEach(cell => {
+                const r = parseInt(cell.getAttribute('data-row'));
+                const c = parseInt(cell.getAttribute('data-col'));
+                if (r === row && c === col) {
+                    cell.setAttribute('fill', color);
+                }
+            });
+        }
+
+        function clearMatrixHighlights() {
+            [matrixA, matrixB, matrixC].forEach(svg => {
+                const cells = svg.querySelectorAll('rect');
+                cells.forEach(cell => cell.setAttribute('fill', '#fff'));
+            });
+        }
+
+        function selectThread(tx, ty, bx, by) {
+            animationState.threadX = tx;
+            animationState.threadY = ty;
+            animationState.blockX = bx;
+            animationState.blockY = by;
+            animationState.computeStep = 0;
+            animationState.phase = 'compute';
+
+            updateThreadHighlight();
+            showIndexCalculation();
+        }
+
+        function updateThreadHighlight() {
+            const gridSvg = document.getElementById('gridSvg');
+            const rects = gridSvg.querySelectorAll('rect[data-tx]');
+            
+            rects.forEach(rect => {
+                const tx = parseInt(rect.getAttribute('data-tx'));
+                const ty = parseInt(rect.getAttribute('data-ty'));
+                const bx = parseInt(rect.getAttribute('data-bx'));
+                const by = parseInt(rect.getAttribute('data-by'));
+                
+                if (tx === animationState.threadX && ty === animationState.threadY &&
+                    bx === animationState.blockX && by === animationState.blockY) {
+                    rect.setAttribute('fill', '#ffd700');
+                } else {
+                    rect.setAttribute('fill', '#f0f0f0');
+                }
+            });
+        }
+
+        function showIndexCalculation() {
+            const { threadX, threadY, blockX, blockY } = animationState;
+            const idx = threadX + BLOCK_SIZE * blockX;
+            const idy = threadY + BLOCK_SIZE * blockY;
+
+            const threadInfo = document.getElementById('threadInfo');
+            const threadDetails = document.getElementById('threadDetails');
+            
+            document.querySelector('.thread-coords').textContent = 
+                `Thread (${threadX}, ${threadY}) in Block (${blockX}, ${blockY})`;
+
+            threadDetails.innerHTML = `
+                <div style="font-size: 13px; line-height: 1.8;">
+                    <strong>Block Dimensions:</strong> blockDim.x = blockDim.y = ${BLOCK_SIZE}<br>
+                    <strong>Thread IDs:</strong> threadIdx.x = ${threadX}, threadIdx.y = ${threadY}<br>
+                    <strong>Block IDs:</strong> blockIdx.x = ${blockX}, blockIdx.y = ${blockY}
+                </div>
+            `;
+
+            const indexCalc = document.getElementById('indexCalc');
+            indexCalc.innerHTML = `
+                <div class="calc-step">
+                    <strong>Step 1: Calculate Global Column Index (idx)</strong><br>
+                    idx = threadIdx.x + blockDim.x × blockIdx.x<br>
+                    idx = <span class="highlight">${threadX}</span> + <span class="highlight">${BLOCK_SIZE}</span> × <span class="highlight">${blockX}</span><br>
+                    idx = <span class="result">${idx}</span>
+                </div>
+
+                <div class="calc-step">
+                    <strong>Step 2: Calculate Global Row Index (idy)</strong><br>
+                    idy = threadIdx.y + blockDim.y × blockIdx.y<br>
+                    idy = <span class="highlight">${threadY}</span> + <span class="highlight">${BLOCK_SIZE}</span> × <span class="highlight">${blockY}</span><br>
+                    idy = <span class="result">${idy}</span>
+                </div>
+
+                <div class="calc-step" style="background: #fff3cd;">
+                    <strong>This thread computes C[${idy}][${idx}]</strong><br>
+                    • Reads <strong>row ${idy}</strong> from Matrix A<br>
+                    • Reads <strong>column ${idx}</strong> from Matrix B<br>
+                    • Computes dot product: Σ(A[${idy}][i] × B[i][${idx}])
+                </div>
+
+                <div class="calc-step">
+                    <strong>Step 3: Memory Addressing (Row-Major)</strong><br>
+                    For i = 0 to ${MATRIX_SIZE-1}:<br>
+                    • A[idy*ds+i] = A[${idy}×${MATRIX_SIZE}+i] reads A[${idy}][i]<br>
+                    • B[i*ds+idx] = B[i×${MATRIX_SIZE}+${idx}] reads B[i][${idx}]<br>
+                    <br>
+                    Output position:<br>
+                    C[idy*ds+idx] = C[${idy}×${MATRIX_SIZE}+${idx}] = C[<span class="result">${idy*MATRIX_SIZE+idx}</span>]
+                </div>
+            `;
+        }
+
+        function animateComputation() {
+            const { threadX, threadY, blockX, blockY, computeStep } = animationState;
+            const idx = threadX + BLOCK_SIZE * blockX;
+            const idy = threadY + BLOCK_SIZE * blockY;
+
+            clearMatrixHighlights();
+
+            if (computeStep < MATRIX_SIZE) {
+                // Highlight current computation
+                highlightCell(matrixA, idy, computeStep, '#ff6b6b');
+                highlightCell(matrixB, computeStep, idx, '#4ecdc4');
+                highlightCell(matrixC, idy, idx, '#95e1d3');
+
+                const indexCalc = document.getElementById('indexCalc');
+                const currentCalc = `
+                    <div class="calc-step" style="background: #e8f4f8; border: 2px solid #667eea;">
+                        <strong>Computing Step ${computeStep + 1}/${MATRIX_SIZE}</strong><br>
+                        temp += A[${idy}×${MATRIX_SIZE}+${computeStep}] × B[${computeStep}×${MATRIX_SIZE}+${idx}]<br>
+                        temp += A[<span class="result">${idy*MATRIX_SIZE+computeStep}</span>] × B[<span class="result">${computeStep*MATRIX_SIZE+idx}</span>]<br>
+                        temp += <span class="highlight">3</span> × <span class="highlight">2</span> = current sum + 6<br>
+                        <br>
+                        <strong>Running Sum:</strong> ${(computeStep + 1) * 6}
+                    </div>
+                `;
+                indexCalc.innerHTML = currentCalc + indexCalc.innerHTML;
+
+                animationState.computeStep++;
+            } else {
+                // Done computing
+                animationState.phase = 'done';
+                highlightCell(matrixC, idy, idx, '#90EE90');
+
+                // Update result value
+                const texts = matrixC.querySelectorAll('text');
+                texts.forEach(text => {
+                    const x = parseInt(text.getAttribute('x'));
+                    const y = parseInt(text.getAttribute('y'));
+                    const col = Math.floor((x - CELL_SIZE / 2) / CELL_SIZE);
+                    const row = Math.floor((y - CELL_SIZE / 2 - 5) / CELL_SIZE);
+                    
+                    if (row === idy && col === idx) {
+                        text.textContent = (MATRIX_SIZE * 3 * 2).toString();
+                    }
+                });
+
+                const indexCalc = document.getElementById('indexCalc');
+                indexCalc.innerHTML = `
+                    <div class="calc-step" style="background: #d4edda; border: 2px solid #28a745;">
+                        <strong>✅ Computation Complete!</strong><br>
+                        Final Result: temp = ${MATRIX_SIZE * 6}<br>
+                        <br>
+                        Writing to C[${idy}×${MATRIX_SIZE}+${idx}] = C[<span class="result">${idy*MATRIX_SIZE+idx}</span>]<br>
+                        <br>
+                        This thread has finished! Click another thread to see its computation.
+                    </div>
+                ` + indexCalc.innerHTML;
+
+                stopAnimation();
+            }
+        }
+
+        function startAnimation() {
+            if (animationState.phase === 'select') {
+                alert('Please click on a thread in the grid first!');
+                return;
+            }
+            
+            if (animationState.running) return;
+            
+            animationState.running = true;
+            document.getElementById('startBtn').disabled = true;
+            document.getElementById('pauseBtn').disabled = false;
+            
+            animationInterval = setInterval(() => {
+                if (animationState.phase === 'compute') {
+                    animateComputation();
+                }
+            }, 1000 / animationState.speed);
+        }
+
+        function stopAnimation() {
+            animationState.running = false;
+            document.getElementById('startBtn').disabled = false;
+            document.getElementById('pauseBtn').disabled = true;
+            clearInterval(animationInterval);
+        }
+
+        function resetAnimation() {
+            stopAnimation();
+            animationState = {
+                running: false,
+                threadX: 0,
+                threadY: 0,
+                blockX: 0,
+                blockY: 0,
+                computeStep: 0,
+                phase: 'select',
+                speed: animationState.speed
+            };
+            
+            initThreadGrid();
+            initMatrix(matrixA, 'A');
+            initMatrix(matrixB, 'B');
+            initMatrix(matrixC, 'C');
+            
+            document.querySelector('.thread-coords').textContent = 'Select a thread to begin';
+            document.getElementById('threadDetails').innerHTML = '';
+            document.getElementById('indexCalc').innerHTML = 
+                'Click "Start Animation" or click a thread in the grid to see index calculations.';
+        }
+
+        function stepForward() {
+            if (animationState.phase === 'select') {
+                alert('Please click on a thread in the grid first!');
+                return;
+            }
+            
+            if (animationState.phase === 'compute') {
+                animateComputation();
+            }
+        }
+
+        document.getElementById('startBtn').addEventListener('click', startAnimation);
+        document.getElementById('pauseBtn').addEventListener('click', stopAnimation);
+        document.getElementById('resetBtn').addEventListener('click', resetAnimation);
+        document.getElementById('stepBtn').addEventListener('click', stepForward);
+        
+        document.getElementById('speedSlider').addEventListener('input', (e) => {
+            animationState.speed = parseFloat(e.target.value);
+            document.getElementById('speedLabel').textContent = animationState.speed + 'x';
+            
+            if (animationState.running) {
+                clearInterval(animationInterval);
+                animationInterval = setInterval(() => {
+                    if (animationState.phase === 'compute') {
+                        animateComputation();
+                    }
+                }, 1000 / animationState.speed);
+            }
+        });
+
+        const matrixA = document.getElementById('matrixA');
+        const matrixB = document.getElementById('matrixB');
+        const matrixC = document.getElementById('matrixC');
+
+        // Initialize
+        initThreadGrid();
+        initMatrix(matrixA, 'A');
+        initMatrix(matrixB, 'B');
+        initMatrix(matrixC, 'C');
+    </script>
+</body>
+</html>
